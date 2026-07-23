@@ -49,13 +49,14 @@ type Config struct {
 	EnableDeviceMetadata bool
 	PluginDataDir        string
 	CdiDir               string
+	DBPath               string
 }
 
 // New creates a new Driver and registers it with kubelet.
 func New(ctx context.Context, devState devicestate.DeviceStateIface, kubeClient coreclientset.Interface, config *Config) (*Driver, error) {
 	logger := klog.FromContext(ctx).WithName("driver")
 
-	cs, err := claimstore.New(consts.DefaultDBPath)
+	cs, err := claimstore.New(config.DBPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create PreparedClaimStore: %w", err)
 	}
