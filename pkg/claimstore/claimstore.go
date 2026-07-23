@@ -54,9 +54,29 @@ func New(dbPath string) (PreparedClaimStore, error) {
 		return nil, fmt.Errorf("open bolt database: %w", err)
 	}
 
-	// Ensure the bucket exists.
 	if err := db.Update(func(tx *bbolt.Tx) error {
-		_, err := tx.CreateBucketIfNotExists(preparedClaimsBucket)
+		// Ensure the bucket exists.
+		b, err := tx.CreateBucketIfNotExists(preparedClaimsBucket)
+		if err != nil {
+			return err
+		}
+
+		// If the bucket existed and we have restored claims, log it.
+		if b.Stats().KeyN > 0 {
+			dump := make(map[k8stypes.UID][]*dratypes.PreparedDevice)
+
+			klog.Infof("Restored %d prepared claims from checkpoint", b.Stats().KeyN)
+
+			err = b.ForEach(func(k, v []byte) error {
+				var devices []*dratypes.PreparedDevice
+				if err := json.Unmarshal(v, &devices); err != nil {
+					return fmt.Errorf("unmarshal claim %s: %w", string(k), err)
+				}
+				dump[k8stypes.UID(string(k))] = devices
+				return nil
+			})
+			klog.V(2).Infof("Restored devices: %v", dump)
+		}
 		return err
 	}); err != nil {
 		if closeErr := db.Close(); closeErr != nil {
