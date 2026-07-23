@@ -50,10 +50,12 @@ func TestDriver(t *testing.T) {
 // kubelet plugin gRPC server. helper is intentionally left nil because
 // PrepareResourceClaims and UnprepareResourceClaims do not use it.
 func newTestDriver(ds *mocks.MockDeviceStateIface, client *fake.Clientset) *Driver {
+	pd, err := podmanager.New()
+	Expect(err).ToNot(HaveOccurred())
 	return &Driver{
 		log:         klog.Background(),
 		deviceState: ds,
-		podManager:  podmanager.New(),
+		podManager:  pd,
 		client:      client,
 	}
 }
@@ -188,8 +190,8 @@ var _ = Describe("PrepareResourceClaims", func() {
 		})
 
 		It("stores the prepared devices in the pod manager", func() {
-			cached, found := drv.podManager.Get(claim.UID)
-			Expect(found).To(BeTrue())
+			cached, err := drv.podManager.Get(claim.UID)
+			Expect(err).NotTo(HaveOccurred())
 			Expect(cached).To(HaveLen(1))
 		})
 
@@ -344,8 +346,9 @@ var _ = Describe("PrepareResourceClaims", func() {
 		})
 
 		It("does not store anything in the pod manager", func() {
-			_, found := drv.podManager.Get(claim.UID)
-			Expect(found).To(BeFalse())
+			cached, err := drv.podManager.Get(claim.UID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(cached).To(BeEmpty())
 		})
 
 		It("does not call UpdateStatus", func() {
@@ -422,8 +425,9 @@ var _ = Describe("UnprepareResourceClaims", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result[claim.UID]).To(BeNil())
 
-			_, found := drv.podManager.Get(claim.UID)
-			Expect(found).To(BeFalse())
+			cached, err2 := drv.podManager.Get(claim.UID)
+			Expect(err2).NotTo(HaveOccurred())
+			Expect(cached).To(BeEmpty())
 		})
 	})
 
@@ -451,9 +455,10 @@ var _ = Describe("UnprepareResourceClaims", func() {
 			Expect(result[claim.UID]).To(MatchError(unprepareErr))
 		})
 
-		It("re-inserts the claim into the pod manager for retry", func() {
-			_, found := drv.podManager.Get(claim.UID)
-			Expect(found).To(BeTrue())
+		It("keeps the claim in the pod manager so that a retry can unprepare it", func() {
+			cached, err := drv.podManager.Get(claim.UID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(cached).NotTo(BeEmpty())
 		})
 	})
 
@@ -481,10 +486,12 @@ var _ = Describe("UnprepareResourceClaims", func() {
 			Expect(result[claim2.UID]).To(BeNil())
 
 			// claim-8 re-inserted, claim-9 removed.
-			_, found1 := drv.podManager.Get(claim1.UID)
-			_, found2 := drv.podManager.Get(claim2.UID)
-			Expect(found1).To(BeTrue())
-			Expect(found2).To(BeFalse())
+			cached1, err1 := drv.podManager.Get(claim1.UID)
+			cached2, err2 := drv.podManager.Get(claim2.UID)
+			Expect(err1).NotTo(HaveOccurred())
+			Expect(err2).NotTo(HaveOccurred())
+			Expect(cached1).NotTo(BeEmpty())
+			Expect(cached2).To(BeEmpty())
 		})
 	})
 })

@@ -33,18 +33,19 @@ type PodManager struct {
 }
 
 // New creates a new PodManager.
-func New() *PodManager {
+func New() (*PodManager, error) {
 	return &PodManager{
 		byClaimUID: make(map[k8stypes.UID][]*dratypes.PreparedDevice),
-	}
+	}, nil
 }
 
 // Get returns the PreparedDevice for the given claim UID.
-func (pm *PodManager) Get(claimUID k8stypes.UID) ([]*dratypes.PreparedDevice, bool) {
+// Returns nil slice if not found.
+func (pm *PodManager) Get(claimUID k8stypes.UID) ([]*dratypes.PreparedDevice, error) {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
-	sc, ok := pm.byClaimUID[claimUID]
-	return sc, ok
+	sc := pm.byClaimUID[claimUID]
+	return sc, nil
 }
 
 // Set stores the PreparedDevice for the given claim UID.
@@ -56,8 +57,9 @@ func (pm *PodManager) Set(claimUID k8stypes.UID, sc []*dratypes.PreparedDevice) 
 }
 
 // Delete removes the PreparedDevice for the given claim UID.
-func (pm *PodManager) Delete(claimUID k8stypes.UID) {
+func (pm *PodManager) Delete(claimUID k8stypes.UID) error {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 	delete(pm.byClaimUID, claimUID)
+	return nil
 }

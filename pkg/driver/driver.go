@@ -55,11 +55,16 @@ type Config struct {
 func New(ctx context.Context, devState devicestate.DeviceStateIface, kubeClient coreclientset.Interface, config *Config) (*Driver, error) {
 	logger := klog.FromContext(ctx).WithName("driver")
 
+	podManager, err := podmanager.New()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create PodManager: %w", err)
+	}
+
 	d := &Driver{
 		log:         logger,
 		nodeName:    config.NodeName,
 		deviceState: devState,
-		podManager:  podmanager.New(),
+		podManager:  podManager,
 		client:      kubeClient,
 	}
 

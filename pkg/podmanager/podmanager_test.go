@@ -39,33 +39,26 @@ var _ = Describe("PodManager", func() {
 	var pm *podmanager.PodManager
 
 	BeforeEach(func() {
-		pm = podmanager.New()
+		var err error
+		pm, err = podmanager.New()
+		Expect(err).ToNot(HaveOccurred())
 	})
 
 	Describe("Get", func() {
-		It("should return false for an unknown claim UID", func() {
-			_, found := pm.Get("unknown-uid")
-			Expect(found).To(BeFalse())
+		It("should return nil slice for an unknown claim UID", func() {
+			got, err := pm.Get("unknown-uid")
+			Expect(got).To(BeNil())
+			Expect(err).ToNot(HaveOccurred())
 		})
 
-		It("should return the stored PreparedDevice and true for a known claim UID", func() {
+		It("should return the stored PreparedDevice for known claim UID", func() {
 			uid := k8stypes.UID("uid-1")
 			pd := makePDs(uid, "claim-1")
 			Expect(pm.Set(uid, pd)).To(Succeed())
 
-			got, found := pm.Get(uid)
-			Expect(found).To(BeTrue())
+			got, err := pm.Get(uid)
+			Expect(err).ToNot(HaveOccurred())
 			Expect(got).To(Equal(pd))
-		})
-
-		It("should not remove the entry on Get", func() {
-			uid := k8stypes.UID("uid-2")
-			pd := makePDs(uid, "claim-2")
-			Expect(pm.Set(uid, pd)).To(Succeed())
-
-			pm.Get(uid)
-			_, found := pm.Get(uid)
-			Expect(found).To(BeTrue())
 		})
 	})
 
@@ -78,8 +71,8 @@ var _ = Describe("PodManager", func() {
 			Expect(pm.Set(uid, pd1)).To(Succeed())
 			Expect(pm.Set(uid, pd2)).To(Succeed())
 
-			got, found := pm.Get(uid)
-			Expect(found).To(BeTrue())
+			got, err := pm.Get(uid)
+			Expect(err).ToNot(HaveOccurred())
 			Expect(got[0].ClaimNamespacedName.Name).To(Equal("second"))
 		})
 
@@ -104,10 +97,11 @@ var _ = Describe("PodManager", func() {
 			uid := k8stypes.UID("uid-4")
 			pd := makePDs(uid, "to-delete")
 			Expect(pm.Set(uid, pd)).To(Succeed())
-			pm.Delete(uid)
+			Expect(pm.Delete(uid)).To(Succeed())
 
-			_, found := pm.Get(uid)
-			Expect(found).To(BeFalse())
+			got, err := pm.Get(uid)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(got).To(BeNil())
 		})
 	})
 
@@ -127,7 +121,7 @@ var _ = Describe("PodManager", func() {
 				}()
 				go func() {
 					defer wg.Done()
-					pm.Get(uid)
+					_, _ = pm.Get(uid)
 				}()
 			}
 			wg.Wait()
@@ -149,7 +143,7 @@ var _ = Describe("PodManager", func() {
 				}()
 				go func() {
 					defer wg.Done()
-					pm.Delete(uid)
+					_ = pm.Delete(uid)
 				}()
 			}
 			wg.Wait()
