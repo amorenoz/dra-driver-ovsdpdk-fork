@@ -27,3 +27,9 @@ packages:
       outpkg: "mocks"
     interfaces:
       TopologyDPServer:
+  github.com/k8snetworkplumbingwg/dra-driver-ovsdpdk/pkg/podmanager:
+    config:
+      dir: "pkg/podmanager/mocks"
+      outpkg: "mocks"
+    interfaces:
+      Checkpoint:

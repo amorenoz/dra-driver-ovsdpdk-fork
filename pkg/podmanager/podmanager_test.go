@@ -17,6 +17,7 @@
 package podmanager_test
 
 import (
+	"errors"
 	"sync"
 	"testing"
 
@@ -27,6 +28,7 @@ import (
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 
 	"github.com/k8snetworkplumbingwg/dra-driver-ovsdpdk/pkg/podmanager"
+	"github.com/k8snetworkplumbingwg/dra-driver-ovsdpdk/pkg/podmanager/mocks"
 	dratypes "github.com/k8snetworkplumbingwg/dra-driver-ovsdpdk/pkg/types"
 )
 
@@ -37,9 +39,15 @@ func TestPodManager(t *testing.T) {
 
 var _ = Describe("PodManager", func() {
 	var pm *podmanager.PodManager
+	var cp *mocks.MockCheckpoint
 
 	BeforeEach(func() {
-		pm = podmanager.New()
+		var err error
+		cp = mocks.NewMockCheckpoint(GinkgoT())
+		cp.EXPECT().Load().Return(map[k8stypes.UID][]*dratypes.PreparedDevice{}, nil)
+
+		pm, err = podmanager.New(cp)
+		Expect(err).NotTo(HaveOccurred())
 	})
 
 	Describe("Get", func() {
@@ -51,7 +59,9 @@ var _ = Describe("PodManager", func() {
 		It("should return the stored PreparedDevice and true for a known claim UID", func() {
 			uid := k8stypes.UID("uid-1")
 			pd := makePDs(uid, "claim-1")
-			pm.Set(uid, pd)
+
+			cp.EXPECT().Store(uid, pd).Return(nil)
+			Expect(pm.Set(uid, pd)).To(Succeed())
 
 			got, found := pm.Get(uid)
 			Expect(found).To(BeTrue())
@@ -61,7 +71,9 @@ var _ = Describe("PodManager", func() {
 		It("should not remove the entry on Get", func() {
 			uid := k8stypes.UID("uid-2")
 			pd := makePDs(uid, "claim-2")
-			pm.Set(uid, pd)
+
+			cp.EXPECT().Store(uid, pd).Return(nil)
+			Expect(pm.Set(uid, pd)).To(Succeed())
 
 			pm.Get(uid)
 			_, found := pm.Get(uid)
@@ -75,8 +87,11 @@ var _ = Describe("PodManager", func() {
 			pd1 := makePDs(uid, "first")
 			pd2 := makePDs(uid, "second")
 
-			pm.Set(uid, pd1)
-			pm.Set(uid, pd2)
+			cp.EXPECT().Store(uid, pd1).Return(nil)
+			Expect(pm.Set(uid, pd1)).To(Succeed())
+
+			cp.EXPECT().Store(uid, pd2).Return(nil)
+			Expect(pm.Set(uid, pd2)).To(Succeed())
 
 			got, found := pm.Get(uid)
 			Expect(found).To(BeTrue())
@@ -89,13 +104,29 @@ var _ = Describe("PodManager", func() {
 			pd1 := makePDs(uid1, "claim-a")
 			pd2 := makePDs(uid2, "claim-b")
 
-			pm.Set(uid1, pd1)
-			pm.Set(uid2, pd2)
+			cp.EXPECT().Store(uid1, pd1).Return(nil)
+			Expect(pm.Set(uid1, pd1)).To(Succeed())
+
+			cp.EXPECT().Store(uid2, pd2).Return(nil)
+			Expect(pm.Set(uid2, pd2)).To(Succeed())
 
 			got1, _ := pm.Get(uid1)
 			got2, _ := pm.Get(uid2)
 			Expect(got1).To(Equal(pd1))
 			Expect(got2).To(Equal(pd2))
+		})
+
+		It("should not update the in-memory cache when checkpoint Store fails", func() {
+			uid := k8stypes.UID("uid-store-fail")
+			pd := makePDs(uid, "claim-store-fail")
+
+			storeErr := errors.New("disk full")
+			cp.EXPECT().Store(uid, pd).Return(storeErr)
+			Expect(pm.Set(uid, pd)).To(MatchError(storeErr))
+
+			// The in-memory cache must not contain the entry.
+			_, found := pm.Get(uid)
+			Expect(found).To(BeFalse())
 		})
 	})
 
@@ -107,8 +138,11 @@ var _ = Describe("PodManager", func() {
 		It("should return the PreparedDevice and remove it from the cache", func() {
 			uid := k8stypes.UID("uid-4")
 			pd := makePDs(uid, "to-delete")
-			pm.Set(uid, pd)
 
+			cp.EXPECT().Store(uid, pd).Return(nil)
+			Expect(pm.Set(uid, pd)).To(Succeed())
+
+			cp.EXPECT().Delete(uid).Return(nil)
 			got := pm.Delete(uid)
 			Expect(got).To(Equal(pd))
 
@@ -118,7 +152,12 @@ var _ = Describe("PodManager", func() {
 
 		It("should return nil on a second delete of the same UID", func() {
 			uid := k8stypes.UID("uid-5")
-			pm.Set(uid, makePDs(uid, "claim-5"))
+			pd := makePDs(uid, "claim-5")
+
+			cp.EXPECT().Store(uid, pd).Return(nil)
+			Expect(pm.Set(uid, pd)).To(Succeed())
+
+			cp.EXPECT().Delete(uid).Return(nil)
 			pm.Delete(uid)
 			Expect(pm.Delete(uid)).To(BeNil())
 		})
@@ -136,7 +175,8 @@ var _ = Describe("PodManager", func() {
 
 				go func() {
 					defer wg.Done()
-					pm.Set(uid, pd)
+					cp.EXPECT().Store(uid, pd).Return(nil)
+					_ = pm.Set(uid, pd)
 				}()
 				go func() {
 					defer wg.Done()
@@ -154,14 +194,18 @@ var _ = Describe("PodManager", func() {
 			for i := range goroutines {
 				uid := k8stypes.UID("uid-del-" + string(rune('A'+i)))
 				pd := makePDs(uid, "claim-del")
-				pm.Set(uid, pd)
+
+				cp.EXPECT().Store(uid, pd).Return(nil)
+				Expect(pm.Set(uid, pd)).To(Succeed())
 
 				go func() {
 					defer wg.Done()
-					pm.Set(uid, pd)
+					cp.EXPECT().Store(uid, pd).Return(nil)
+					_ = pm.Set(uid, pd)
 				}()
 				go func() {
 					defer wg.Done()
+					cp.EXPECT().Delete(uid).Return(nil)
 					pm.Delete(uid)
 				}()
 			}

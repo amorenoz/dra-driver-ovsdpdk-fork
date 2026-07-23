@@ -19,9 +19,11 @@
 package podmanager
 
 import (
+	"fmt"
 	"sync"
 
 	k8stypes "k8s.io/apimachinery/pkg/types"
+	klog "k8s.io/klog/v2"
 
 	dratypes "github.com/k8snetworkplumbingwg/dra-driver-ovsdpdk/pkg/types"
 )
@@ -30,13 +32,25 @@ import (
 type PodManager struct {
 	mu         sync.RWMutex
 	byClaimUID map[k8stypes.UID][]*dratypes.PreparedDevice
+	cp         Checkpoint
 }
 
 // New creates a new PodManager.
-func New() *PodManager {
-	return &PodManager{
+func New(cp Checkpoint) (*PodManager, error) {
+	pm := &PodManager{
 		byClaimUID: make(map[k8stypes.UID][]*dratypes.PreparedDevice),
+		cp:         cp,
 	}
+
+	if cp != nil {
+		restored, err := cp.Load()
+		if err != nil {
+			return nil, fmt.Errorf("restore checkpoint: %w", err)
+		}
+		pm.byClaimUID = restored
+	}
+
+	return pm, nil
 }
 
 // Get returns the PreparedDevice for the given claim UID.
@@ -48,10 +62,18 @@ func (pm *PodManager) Get(claimUID k8stypes.UID) ([]*dratypes.PreparedDevice, bo
 }
 
 // Set stores the PreparedDevice for the given claim UID.
-func (pm *PodManager) Set(claimUID k8stypes.UID, sc []*dratypes.PreparedDevice) {
+func (pm *PodManager) Set(claimUID k8stypes.UID, sc []*dratypes.PreparedDevice) error {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
+
+	if pm.cp != nil {
+		if err := pm.cp.Store(claimUID, sc); err != nil {
+			return fmt.Errorf("checkpoint store: %w", err)
+		}
+	}
+
 	pm.byClaimUID[claimUID] = sc
+	return nil
 }
 
 // Delete removes and returns the PreparedDevice for the given claim UID.
@@ -63,6 +85,21 @@ func (pm *PodManager) Delete(claimUID k8stypes.UID) []*dratypes.PreparedDevice {
 	if !ok {
 		return nil
 	}
+
+	if pm.cp != nil {
+		if err := pm.cp.Delete(claimUID); err != nil {
+			klog.Errorf("Failed to delete checkpoint for claim %s: %v", claimUID, err)
+		}
+	}
+
 	delete(pm.byClaimUID, claimUID)
 	return sc
+}
+
+// Close releases resources held by the PodManager, if any.
+func (pm *PodManager) Close() error {
+	if pm.cp != nil {
+		return pm.cp.Close()
+	}
+	return nil
 }
