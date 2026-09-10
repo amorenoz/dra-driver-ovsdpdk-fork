@@ -38,6 +38,7 @@ import (
 
 	"github.com/k8snetworkplumbingwg/dra-driver-ovsdpdk/pkg/devicestate/mocks"
 	"github.com/k8snetworkplumbingwg/dra-driver-ovsdpdk/pkg/podmanager"
+	cpmocks "github.com/k8snetworkplumbingwg/dra-driver-ovsdpdk/pkg/podmanager/mocks"
 	dratypes "github.com/k8snetworkplumbingwg/dra-driver-ovsdpdk/pkg/types"
 )
 
@@ -51,6 +52,18 @@ func TestDriver(t *testing.T) {
 // PrepareResourceClaims and UnprepareResourceClaims do not use it.
 func newTestDriver(ds *mocks.MockDeviceStateIface, client *fake.Clientset) *Driver {
 	pm, _ := podmanager.New(nil)
+	return &Driver{
+		log:         klog.Background(),
+		deviceState: ds,
+		podManager:  pm,
+		client:      client,
+	}
+}
+
+// newTestDriverWithCheckpoint builds a Driver backed by a real PodManager that
+// uses the supplied Checkpoint, enabling tests that need podManager.Set to fail.
+func newTestDriverWithCheckpoint(ds *mocks.MockDeviceStateIface, cp podmanager.Checkpoint, client *fake.Clientset) *Driver {
+	pm, _ := podmanager.New(cp)
 	return &Driver{
 		log:         klog.Background(),
 		deviceState: ds,
@@ -371,6 +384,36 @@ var _ = Describe("PrepareResourceClaims", func() {
 			Expect(found).To(BeFalse())
 		})
 	})
+
+	Context("when podManager.Set fails because the checkpoint returns an error", func() {
+		It("rolls back the prepared devices and returns the error", func() {
+			cp := cpmocks.NewMockCheckpoint(GinkgoT())
+			cp.EXPECT().Load().Return(nil, nil).Once()
+			cp.EXPECT().Store(mock.Anything, mock.Anything).
+				Return(errors.New("disk full")).Once()
+
+			claim := makeClaim("uid-sf", "claim-sf", "default")
+			_, _ = client.ResourceV1().ResourceClaims("default").Create(ctx, claim, metav1.CreateOptions{})
+
+			drv = newTestDriverWithCheckpoint(ds, cp, client)
+
+			ds.EXPECT().PrepareResourceClaim(mock.Anything, mock.Anything).
+				Return(makePreparedDevices("uid-sf", "claim-sf", "default"), nil).Once()
+			ds.EXPECT().UnprepareResourceClaim(mock.Anything, mock.Anything).
+				Return(nil).Once()
+
+			result, err := drv.PrepareResourceClaims(ctx, []*resourceapi.ResourceClaim{claim})
+			Expect(err).To(HaveOccurred())
+			Expect(err).To(MatchError(ContainSubstring("disk full")))
+			Expect(result[claim.UID].Err).To(HaveOccurred())
+
+			_, found := drv.podManager.Get(claim.UID)
+			Expect(found).To(BeFalse(), "claim must not be in pod manager after successful rollback")
+
+			Expect(hasUpdateStatusAction(client, "default")).To(BeFalse(),
+				"UpdateStatus must not be called when checkpoint store fails")
+		})
+	})
 })
 
 var _ = Describe("UnprepareResourceClaims", func() {
@@ -452,7 +495,10 @@ var _ = Describe("UnprepareResourceClaims", func() {
 			Expect(result[claim.UID]).To(MatchError(unprepareErr))
 		})
 
-		It("re-inserts the claim into the pod manager for retry", func() {
+		It("keeps the claim in the pod manager so that a retry can unprepare it", func() {
+			// The new Get-first approach (commit 6dc42b7) never deletes the entry
+			// before attempting unprepare, so on failure the entry is still present
+			// without any re-insertion.
 			_, found := drv.podManager.Get(claim.UID)
 			Expect(found).To(BeTrue())
 		})
