@@ -31,6 +31,7 @@ spec:
           volumeMounts:
             - name: user-db
               mountPath: /user-db
+      terminationGracePeriodSeconds: 60
       containers:
         - name: driver
           image: IMAGE
