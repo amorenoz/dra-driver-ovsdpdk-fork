@@ -20,6 +20,7 @@ package driver
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	resourceapi "k8s.io/api/resource/v1"
 	coreclientset "k8s.io/client-go/kubernetes"
@@ -41,6 +42,8 @@ type Driver struct {
 	podManager  *podmanager.PodManager
 	helper      *kubeletplugin.Helper
 	client      coreclientset.Interface
+	// wg tracks in-flight PrepareResourceClaims / UnprepareResourceClaims
+	wg sync.WaitGroup
 }
 
 // Config encapsulates the Driver configuration.
@@ -139,8 +142,14 @@ func (d *Driver) HandleError(ctx context.Context, err error, msg string) {
 
 // Stop shuts down the DRA driver and deregisters from kubelet.
 func (d *Driver) Stop() {
+	d.helper.Stop()
+
+	// kubeletplugin.Helper.Stop() will stop accepting new requests but
+	// in-flight operations are not aborted. Wait until all active
+	// PrepareResourceClaims / UnprepareResourceClaims handlers
+	// return, and only then close the PodManager.
+	d.wg.Wait()
 	if err := d.podManager.Close(); err != nil {
 		d.log.Error(err, "Failed to close pod manager checkpoint")
 	}
-	d.helper.Stop()
 }

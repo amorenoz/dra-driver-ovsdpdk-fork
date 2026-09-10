@@ -33,6 +33,8 @@ import (
 )
 
 func (d *Driver) PrepareResourceClaims(ctx context.Context, claims []*resourceapi.ResourceClaim) (map[k8stypes.UID]kubeletplugin.PrepareResult, error) {
+	d.wg.Add(1)
+	defer d.wg.Done()
 	logger := klog.FromContext(ctx).WithName("PrepareResourceClaims")
 	result := make(map[k8stypes.UID]kubeletplugin.PrepareResult, len(claims))
 
@@ -103,6 +105,8 @@ func (d *Driver) updateClaimStatus(ctx context.Context, claim *resourceapi.Resou
 }
 
 func (d *Driver) UnprepareResourceClaims(ctx context.Context, claims []kubeletplugin.NamespacedObject) (map[k8stypes.UID]error, error) {
+	d.wg.Add(1)
+	defer d.wg.Done()
 	logger := klog.FromContext(ctx).WithName("UnprepareResourceClaims")
 	result := make(map[k8stypes.UID]error, len(claims))
 
