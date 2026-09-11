@@ -40,13 +40,17 @@ func (d *Driver) PrepareResourceClaims(ctx context.Context, claims []*resourceap
 		logger.V(1).Info("Preparing claim", "claim", claim.UID, "name", claim.Name, "namespace", claim.Namespace)
 		logger.V(3).Info("Claim", "claim", claim)
 
-		if preparedDevices, found := d.podManager.Get(claim.UID); found {
+		preparedDevices, err := d.podManager.Get(claim.UID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to access store: %w", err)
+		}
+		if len(preparedDevices) > 0 {
 			logger.V(1).Info("Claim already prepared, returning cached result", "claim", claim.UID)
 			result[claim.UID] = preparedDevicesToResult(preparedDevices)
 			continue
 		}
 
-		preparedDevices, err := d.deviceState.PrepareResourceClaim(ctx, claim)
+		preparedDevices, err = d.deviceState.PrepareResourceClaim(ctx, claim)
 		if err != nil {
 			logger.Error(err, "Failed to prepare claim", "claim", claim.UID)
 			result[claim.UID] = kubeletplugin.PrepareResult{Err: err}
@@ -107,8 +111,11 @@ func (d *Driver) UnprepareResourceClaims(ctx context.Context, claims []kubeletpl
 	for _, claim := range claims {
 		logger.V(1).Info("Unprepareing claim", "claim", claim.UID, "name", claim.Name, "namespace", claim.Namespace)
 
-		pd := d.podManager.Delete(claim.UID)
-		if pd == nil {
+		pd, err := d.podManager.Get(claim.UID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to access store: %w", err)
+		}
+		if len(pd) == 0 {
 			logger.Info("Claim not found in pod manager, nothing to unprepare", "claim", claim.UID)
 			result[claim.UID] = nil
 			continue
@@ -117,11 +124,12 @@ func (d *Driver) UnprepareResourceClaims(ctx context.Context, claims []kubeletpl
 		if err := d.deviceState.UnprepareResourceClaim(ctx, pd); err != nil {
 			logger.Error(err, "Failed to unprepare claim", "claim", claim.UID)
 			result[claim.UID] = fmt.Errorf("unprepare claim %s: %w", claim.UID, err)
-			// Reinsert perpared device in cache so that future retires can continue.
-			d.podManager.Set(claim.UID, pd)
 			continue
 		}
 
+		if err := d.podManager.Delete(claim.UID); err != nil {
+			return nil, fmt.Errorf("failed to remove element from store: %w", err)
+		}
 		result[claim.UID] = nil
 		logger.V(1).Info("Unprepared claim", "claim", claim.UID, "name", claim.Name, "namespace", claim.Namespace)
 	}
