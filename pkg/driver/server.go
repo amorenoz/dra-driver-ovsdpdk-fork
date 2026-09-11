@@ -107,8 +107,8 @@ func (d *Driver) UnprepareResourceClaims(ctx context.Context, claims []kubeletpl
 	for _, claim := range claims {
 		logger.V(1).Info("Unprepareing claim", "claim", claim.UID, "name", claim.Name, "namespace", claim.Namespace)
 
-		pd := d.podManager.Delete(claim.UID)
-		if pd == nil {
+		pd, found := d.podManager.Get(claim.UID)
+		if !found {
 			logger.Info("Claim not found in pod manager, nothing to unprepare", "claim", claim.UID)
 			result[claim.UID] = nil
 			continue
@@ -117,11 +117,10 @@ func (d *Driver) UnprepareResourceClaims(ctx context.Context, claims []kubeletpl
 		if err := d.deviceState.UnprepareResourceClaim(ctx, pd); err != nil {
 			logger.Error(err, "Failed to unprepare claim", "claim", claim.UID)
 			result[claim.UID] = fmt.Errorf("unprepare claim %s: %w", claim.UID, err)
-			// Reinsert perpared device in cache so that future retires can continue.
-			d.podManager.Set(claim.UID, pd)
 			continue
 		}
 
+		d.podManager.Delete(claim.UID)
 		result[claim.UID] = nil
 		logger.V(1).Info("Unprepared claim", "claim", claim.UID, "name", claim.Name, "namespace", claim.Namespace)
 	}
