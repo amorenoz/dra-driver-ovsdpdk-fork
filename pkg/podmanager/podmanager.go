@@ -76,15 +76,10 @@ func (pm *PodManager) Set(claimUID k8stypes.UID, sc []*dratypes.PreparedDevice) 
 	return nil
 }
 
-// Delete removes and returns the PreparedDevice for the given claim UID.
-// Returns nil if not found.
-func (pm *PodManager) Delete(claimUID k8stypes.UID) []*dratypes.PreparedDevice {
+// Delete removes the PreparedDevice for the given claim UID.
+func (pm *PodManager) Delete(claimUID k8stypes.UID) {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
-	sc, ok := pm.byClaimUID[claimUID]
-	if !ok {
-		return nil
-	}
 
 	if pm.cp != nil {
 		if err := pm.cp.Delete(claimUID); err != nil {
@@ -93,7 +88,6 @@ func (pm *PodManager) Delete(claimUID k8stypes.UID) []*dratypes.PreparedDevice {
 	}
 
 	delete(pm.byClaimUID, claimUID)
-	return sc
 }
 
 // Close releases resources held by the PodManager, if any.

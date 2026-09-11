@@ -131,11 +131,7 @@ var _ = Describe("PodManager", func() {
 	})
 
 	Describe("Delete", func() {
-		It("should return nil for an unknown claim UID", func() {
-			Expect(pm.Delete("nonexistent")).To(BeNil())
-		})
-
-		It("should return the PreparedDevice and remove it from the cache", func() {
+		It("should delete the entry", func() {
 			uid := k8stypes.UID("uid-4")
 			pd := makePDs(uid, "to-delete")
 
@@ -143,23 +139,10 @@ var _ = Describe("PodManager", func() {
 			Expect(pm.Set(uid, pd)).To(Succeed())
 
 			cp.EXPECT().Delete(uid).Return(nil)
-			got := pm.Delete(uid)
-			Expect(got).To(Equal(pd))
+			pm.Delete(uid)
 
 			_, found := pm.Get(uid)
 			Expect(found).To(BeFalse())
-		})
-
-		It("should return nil on a second delete of the same UID", func() {
-			uid := k8stypes.UID("uid-5")
-			pd := makePDs(uid, "claim-5")
-
-			cp.EXPECT().Store(uid, pd).Return(nil)
-			Expect(pm.Set(uid, pd)).To(Succeed())
-
-			cp.EXPECT().Delete(uid).Return(nil)
-			pm.Delete(uid)
-			Expect(pm.Delete(uid)).To(BeNil())
 		})
 	})
 
