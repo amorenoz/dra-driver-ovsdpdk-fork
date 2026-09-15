@@ -242,6 +242,36 @@ var _ = Describe("DeviceState", func() {
 			Expect(cfg.ContainerRootPath).To(Equal("/custom/container"))
 		})
 	})
+
+	Describe("UpdateConfig", func() {
+		It("should return no error and leave config nil when spec is nil", func(ctx SpecContext) {
+			Expect(ds.UpdateConfig(ctx, nil)).To(Succeed())
+			Expect(ds.GetVhostUserConfig()).To(BeNil())
+		})
+
+		It("should return no error and leave config nil when VhostUser is nil", func(ctx SpecContext) {
+			Expect(ds.UpdateConfig(ctx, &ovsdpdkdrav1alpha1.OvsDpdkConfigSpec{VhostUser: nil})).To(Succeed())
+			Expect(ds.GetVhostUserConfig()).To(BeNil())
+		})
+
+		It("should clear a previously set config when spec is nil", func(ctx SpecContext) {
+			spec := &ovsdpdkdrav1alpha1.VhostUserSpec{ContainerRootPath: "/custom/container"}
+			Expect(ds.UpdateConfig(ctx, &ovsdpdkdrav1alpha1.OvsDpdkConfigSpec{VhostUser: spec})).To(Succeed())
+			Expect(ds.GetVhostUserConfig()).NotTo(BeNil())
+
+			Expect(ds.UpdateConfig(ctx, nil)).To(Succeed())
+			Expect(ds.GetVhostUserConfig()).To(BeNil())
+		})
+
+		It("should clear a previously set config when VhostUser is nil", func(ctx SpecContext) {
+			spec := &ovsdpdkdrav1alpha1.VhostUserSpec{ContainerRootPath: "/custom/container"}
+			Expect(ds.UpdateConfig(ctx, &ovsdpdkdrav1alpha1.OvsDpdkConfigSpec{VhostUser: spec})).To(Succeed())
+			Expect(ds.GetVhostUserConfig()).NotTo(BeNil())
+
+			Expect(ds.UpdateConfig(ctx, &ovsdpdkdrav1alpha1.OvsDpdkConfigSpec{VhostUser: nil})).To(Succeed())
+			Expect(ds.GetVhostUserConfig()).To(BeNil())
+		})
+	})
 })
 
 var _ = Describe("DeviceState prepare/unprepare", func() {
@@ -596,6 +626,15 @@ var _ = Describe("DeviceState prepare/unprepare", func() {
 			}}
 			_, err = ds.PrepareResourceClaim(ctx, claim)
 			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("should return an error when vhost config has been cleared", func(ctx SpecContext) {
+			ds, _, _, _ := newDeviceStateWithMocks(ctx, nil)
+			Expect(ds.UpdateConfig(ctx, nil)).To(Succeed())
+
+			claim := makeClaim("abcdef12-0000-0000-0000-000000000070", "pod-uid-nocfg", "claim-nocfg", "vhost-nocfg", "br0")
+			_, err := ds.PrepareResourceClaim(ctx, claim)
+			Expect(err).To(MatchError(ContainSubstring("missing VhostUser configuration")))
 		})
 
 		It("should roll back the socket directory when CreatePort fails", func(ctx SpecContext) {
