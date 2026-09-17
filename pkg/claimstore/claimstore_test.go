@@ -17,6 +17,7 @@
 package claimstore_test
 
 import (
+	"path/filepath"
 	"sync"
 	"testing"
 
@@ -28,6 +29,7 @@ import (
 
 	"github.com/k8snetworkplumbingwg/dra-driver-ovsdpdk/pkg/claimstore"
 	dratypes "github.com/k8snetworkplumbingwg/dra-driver-ovsdpdk/pkg/types"
+	ovsportv1alpha1 "github.com/k8snetworkplumbingwg/dra-driver-ovsdpdk/pkg/api/ovsport/v1alpha1"
 )
 
 func TestClaimStore(t *testing.T) {
@@ -36,22 +38,30 @@ func TestClaimStore(t *testing.T) {
 }
 
 var _ = Describe("PreparedClaimStore", func() {
-	var cs claimstore.PreparedClaimStore
+	var (
+		cs     claimstore.PreparedClaimStore
+		dbPath string
+	)
 
 	BeforeEach(func() {
+		dbPath = filepath.Join(GinkgoT().TempDir(), "test.db")
 		var err error
-		cs, err = claimstore.New()
+		cs, err = claimstore.New(dbPath)
 		Expect(err).ToNot(HaveOccurred())
 	})
 
+	AfterEach(func() {
+		Expect(cs.Close()).To(Succeed())
+	})
+
 	Describe("Get", func() {
-		It("should return nil slice for an unknown claim UID", func() {
+		It("returns nil for an unknown claim UID", func() {
 			got, err := cs.Get("unknown-uid")
-			Expect(got).To(BeNil())
 			Expect(err).ToNot(HaveOccurred())
+			Expect(got).To(BeNil())
 		})
 
-		It("should return the stored PreparedDevice for known claim UID", func() {
+		It("returns the stored devices for a known claim UID", func() {
 			uid := k8stypes.UID("uid-1")
 			pd := makePDs(uid, "claim-1")
 			Expect(cs.Set(uid, pd)).To(Succeed())
@@ -63,20 +73,17 @@ var _ = Describe("PreparedClaimStore", func() {
 	})
 
 	Describe("Set", func() {
-		It("should overwrite an existing entry", func() {
-			uid := k8stypes.UID("uid-3")
-			pd1 := makePDs(uid, "first")
-			pd2 := makePDs(uid, "second")
-
-			Expect(cs.Set(uid, pd1)).To(Succeed())
-			Expect(cs.Set(uid, pd2)).To(Succeed())
+		It("overwrites an existing entry", func() {
+			uid := k8stypes.UID("uid-overwrite")
+			Expect(cs.Set(uid, makePDs(uid, "first"))).To(Succeed())
+			Expect(cs.Set(uid, makePDs(uid, "second"))).To(Succeed())
 
 			got, err := cs.Get(uid)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(got[0].ClaimNamespacedName.Name).To(Equal("second"))
 		})
 
-		It("should store independent entries for different UIDs", func() {
+		It("stores independent entries for different UIDs", func() {
 			uid1 := k8stypes.UID("uid-a")
 			uid2 := k8stypes.UID("uid-b")
 			pd1 := makePDs(uid1, "claim-a")
@@ -90,29 +97,135 @@ var _ = Describe("PreparedClaimStore", func() {
 			Expect(got1).To(Equal(pd1))
 			Expect(got2).To(Equal(pd2))
 		})
+
+		It("round-trips all PreparedDevice fields", func() {
+			uid := k8stypes.UID("uid-full")
+			vlan := 42
+			portConfig := &ovsportv1alpha1.OvsPortConfig{
+				Vlan: &vlan,
+			}
+			devices := []*dratypes.PreparedDevice{
+				{
+					ClaimNamespacedName: kubeletplugin.NamespacedObject{
+						NamespacedName: k8stypes.NamespacedName{
+							Name:      "full-claim",
+							Namespace: "test-ns",
+						},
+						UID: uid,
+					},
+					BridgeName:  "br-dpdk0",
+					OVSPortName: "vhost-port",
+					Mount: dratypes.MountInfo{
+						HostDir:      "/var/run/ovsdpdk/host",
+						ContainerDir: "/var/run/ovsdpdk/container",
+					},
+					Socket: dratypes.SocketInfo{
+						HostPath:      "/var/run/ovsdpdk/host/vhost.sock",
+						ContainerPath: "/var/run/ovsdpdk/container/vhost.sock",
+					},
+					PortConfig: portConfig,
+				},
+			}
+			Expect(cs.Set(uid, devices)).To(Succeed())
+
+			got, err := cs.Get(uid)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(got).To(Equal(devices))
+		})
 	})
 
 	Describe("Delete", func() {
-		It("should delete the entry", func() {
-			uid := k8stypes.UID("uid-4")
-			pd := makePDs(uid, "to-delete")
-			Expect(cs.Set(uid, pd)).To(Succeed())
+		It("removes a stored entry", func() {
+			uid := k8stypes.UID("uid-delete")
+			Expect(cs.Set(uid, makePDs(uid, "to-delete"))).To(Succeed())
 			Expect(cs.Delete(uid)).To(Succeed())
 
 			got, err := cs.Get(uid)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(got).To(BeNil())
 		})
+
+		It("does not error when deleting a nonexistent entry", func() {
+			Expect(cs.Delete("nonexistent")).To(Succeed())
+		})
+
+		It("does not affect other entries", func() {
+			uid1 := k8stypes.UID("keep")
+			uid2 := k8stypes.UID("remove")
+			Expect(cs.Set(uid1, makePDs(uid1, "keep"))).To(Succeed())
+			Expect(cs.Set(uid2, makePDs(uid2, "remove"))).To(Succeed())
+			Expect(cs.Delete(uid2)).To(Succeed())
+
+			got1, err := cs.Get(uid1)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(got1).ToNot(BeNil())
+
+			got2, err := cs.Get(uid2)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(got2).To(BeNil())
+		})
+	})
+
+	Describe("persistence across close and reopen", func() {
+		It("survives a simulated restart", func() {
+			uid := k8stypes.UID("uid-persist")
+			Expect(cs.Set(uid, makePDs(uid, "persistent-claim"))).To(Succeed())
+			Expect(cs.Close()).To(Succeed())
+
+			var err error
+			cs, err = claimstore.New(dbPath)
+			Expect(err).ToNot(HaveOccurred())
+
+			got, err := cs.Get(uid)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(got).To(HaveLen(1))
+			Expect(got[0].ClaimNamespacedName.Name).To(Equal("persistent-claim"))
+		})
+
+		It("reflects deletes after restart", func() {
+			uid := k8stypes.UID("uid-del-persist")
+			Expect(cs.Set(uid, makePDs(uid, "del-persist"))).To(Succeed())
+			Expect(cs.Delete(uid)).To(Succeed())
+			Expect(cs.Close()).To(Succeed())
+
+			var err error
+			cs, err = claimstore.New(dbPath)
+			Expect(err).ToNot(HaveOccurred())
+
+			got, err := cs.Get(uid)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(got).To(BeNil())
+		})
+
+		It("preserves multiple entries across restart", func() {
+			uid1 := k8stypes.UID("uid-multi-1")
+			uid2 := k8stypes.UID("uid-multi-2")
+			Expect(cs.Set(uid1, makePDs(uid1, "claim-1"))).To(Succeed())
+			Expect(cs.Set(uid2, makePDs(uid2, "claim-2"))).To(Succeed())
+			Expect(cs.Close()).To(Succeed())
+
+			var err error
+			cs, err = claimstore.New(dbPath)
+			Expect(err).ToNot(HaveOccurred())
+
+			got1, err := cs.Get(uid1)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(got1).To(HaveLen(1))
+
+			got2, err := cs.Get(uid2)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(got2).To(HaveLen(1))
+		})
 	})
 
 	Describe("thread safety", func() {
-		It("should handle concurrent Set and Get without data races", func() {
+		It("handles concurrent Set and Get without data races", func() {
 			const goroutines = 50
 			var wg sync.WaitGroup
 			wg.Add(goroutines * 2)
 
 			for i := range goroutines {
-				uid := k8stypes.UID(k8stypes.UID("uid-concurrent-" + string(rune('A'+i))))
+				uid := k8stypes.UID("uid-concurrent-" + string(rune('A'+i)))
 				pd := makePDs(uid, "claim-concurrent")
 
 				go func() {
@@ -127,7 +240,7 @@ var _ = Describe("PreparedClaimStore", func() {
 			wg.Wait()
 		})
 
-		It("should handle concurrent Set and Delete without data races", func() {
+		It("handles concurrent Set and Delete without data races", func() {
 			const goroutines = 50
 			var wg sync.WaitGroup
 			wg.Add(goroutines * 2)
@@ -151,7 +264,7 @@ var _ = Describe("PreparedClaimStore", func() {
 	})
 })
 
-// makePDs builds a slice with a single minimal PreparedDevice for testing the claim store.
+// makePDs builds a slice with a single minimal PreparedDevice for testing.
 func makePDs(uid k8stypes.UID, name string) []*dratypes.PreparedDevice {
 	return []*dratypes.PreparedDevice{
 		{
