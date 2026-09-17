@@ -28,4 +28,5 @@ type PreparedClaimStore interface {
 	Get(claimUID k8stypes.UID) ([]*dratypes.PreparedDevice, error)
 	Set(claimUID k8stypes.UID, sc []*dratypes.PreparedDevice) error
 	Delete(claimUID k8stypes.UID) error
+	Close() error
 }

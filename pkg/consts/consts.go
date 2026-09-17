@@ -51,6 +51,9 @@ const (
 
 	// DefaultContainerRootPath is the default vhost-user container base path.
 	DefaultContainerRootPath = "/var/run/ovsdpdk"
+
+	// DefaultDBPath is the default path for the claim store.
+	DefaultDBPath = "/var/run/ovsdpdk/ovsdpdk.db"
 )
 
 // Backoff is the retry configuration used when updating ResourceClaim status.
