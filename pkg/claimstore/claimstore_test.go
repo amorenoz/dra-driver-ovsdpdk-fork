@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package podmanager_test
+package claimstore_test
 
 import (
 	"sync"
@@ -26,27 +26,27 @@ import (
 	k8stypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 
-	"github.com/k8snetworkplumbingwg/dra-driver-ovsdpdk/pkg/podmanager"
+	"github.com/k8snetworkplumbingwg/dra-driver-ovsdpdk/pkg/claimstore"
 	dratypes "github.com/k8snetworkplumbingwg/dra-driver-ovsdpdk/pkg/types"
 )
 
-func TestPodManager(t *testing.T) {
+func TestClaimStore(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "PodManager Suite")
+	RunSpecs(t, "ClaimStore Suite")
 }
 
-var _ = Describe("PodManager", func() {
-	var pm *podmanager.PodManager
+var _ = Describe("PreparedClaimStore", func() {
+	var cs claimstore.PreparedClaimStore
 
 	BeforeEach(func() {
 		var err error
-		pm, err = podmanager.New()
+		cs, err = claimstore.New()
 		Expect(err).ToNot(HaveOccurred())
 	})
 
 	Describe("Get", func() {
 		It("should return nil slice for an unknown claim UID", func() {
-			got, err := pm.Get("unknown-uid")
+			got, err := cs.Get("unknown-uid")
 			Expect(got).To(BeNil())
 			Expect(err).ToNot(HaveOccurred())
 		})
@@ -54,9 +54,9 @@ var _ = Describe("PodManager", func() {
 		It("should return the stored PreparedDevice for known claim UID", func() {
 			uid := k8stypes.UID("uid-1")
 			pd := makePDs(uid, "claim-1")
-			Expect(pm.Set(uid, pd)).To(Succeed())
+			Expect(cs.Set(uid, pd)).To(Succeed())
 
-			got, err := pm.Get(uid)
+			got, err := cs.Get(uid)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(got).To(Equal(pd))
 		})
@@ -68,10 +68,10 @@ var _ = Describe("PodManager", func() {
 			pd1 := makePDs(uid, "first")
 			pd2 := makePDs(uid, "second")
 
-			Expect(pm.Set(uid, pd1)).To(Succeed())
-			Expect(pm.Set(uid, pd2)).To(Succeed())
+			Expect(cs.Set(uid, pd1)).To(Succeed())
+			Expect(cs.Set(uid, pd2)).To(Succeed())
 
-			got, err := pm.Get(uid)
+			got, err := cs.Get(uid)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(got[0].ClaimNamespacedName.Name).To(Equal("second"))
 		})
@@ -82,11 +82,11 @@ var _ = Describe("PodManager", func() {
 			pd1 := makePDs(uid1, "claim-a")
 			pd2 := makePDs(uid2, "claim-b")
 
-			Expect(pm.Set(uid1, pd1)).To(Succeed())
-			Expect(pm.Set(uid2, pd2)).To(Succeed())
+			Expect(cs.Set(uid1, pd1)).To(Succeed())
+			Expect(cs.Set(uid2, pd2)).To(Succeed())
 
-			got1, _ := pm.Get(uid1)
-			got2, _ := pm.Get(uid2)
+			got1, _ := cs.Get(uid1)
+			got2, _ := cs.Get(uid2)
 			Expect(got1).To(Equal(pd1))
 			Expect(got2).To(Equal(pd2))
 		})
@@ -96,10 +96,10 @@ var _ = Describe("PodManager", func() {
 		It("should delete the entry", func() {
 			uid := k8stypes.UID("uid-4")
 			pd := makePDs(uid, "to-delete")
-			Expect(pm.Set(uid, pd)).To(Succeed())
-			Expect(pm.Delete(uid)).To(Succeed())
+			Expect(cs.Set(uid, pd)).To(Succeed())
+			Expect(cs.Delete(uid)).To(Succeed())
 
-			got, err := pm.Get(uid)
+			got, err := cs.Get(uid)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(got).To(BeNil())
 		})
@@ -117,11 +117,11 @@ var _ = Describe("PodManager", func() {
 
 				go func() {
 					defer wg.Done()
-					_ = pm.Set(uid, pd)
+					_ = cs.Set(uid, pd)
 				}()
 				go func() {
 					defer wg.Done()
-					_, _ = pm.Get(uid)
+					_, _ = cs.Get(uid)
 				}()
 			}
 			wg.Wait()
@@ -135,15 +135,15 @@ var _ = Describe("PodManager", func() {
 			for i := range goroutines {
 				uid := k8stypes.UID("uid-del-" + string(rune('A'+i)))
 				pd := makePDs(uid, "claim-del")
-				Expect(pm.Set(uid, pd)).To(Succeed())
+				Expect(cs.Set(uid, pd)).To(Succeed())
 
 				go func() {
 					defer wg.Done()
-					_ = pm.Set(uid, pd)
+					_ = cs.Set(uid, pd)
 				}()
 				go func() {
 					defer wg.Done()
-					_ = pm.Delete(uid)
+					_ = cs.Delete(uid)
 				}()
 			}
 			wg.Wait()
@@ -151,7 +151,7 @@ var _ = Describe("PodManager", func() {
 	})
 })
 
-// makePDs builds a slice with a single minimal PreparedDevice for testing the pod manager cache.
+// makePDs builds a slice with a single minimal PreparedDevice for testing the claim store.
 func makePDs(uid k8stypes.UID, name string) []*dratypes.PreparedDevice {
 	return []*dratypes.PreparedDevice{
 		{

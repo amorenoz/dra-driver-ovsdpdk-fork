@@ -28,9 +28,9 @@ import (
 	"k8s.io/dynamic-resource-allocation/resourceslice"
 	"k8s.io/klog/v2"
 
+	"github.com/k8snetworkplumbingwg/dra-driver-ovsdpdk/pkg/claimstore"
 	"github.com/k8snetworkplumbingwg/dra-driver-ovsdpdk/pkg/consts"
 	"github.com/k8snetworkplumbingwg/dra-driver-ovsdpdk/pkg/devicestate"
-	"github.com/k8snetworkplumbingwg/dra-driver-ovsdpdk/pkg/podmanager"
 )
 
 // Driver is the DRA kubelet plugin for OVS-DPDK vhost-user ports.
@@ -38,7 +38,7 @@ type Driver struct {
 	log         klog.Logger
 	nodeName    string
 	deviceState devicestate.DeviceStateIface
-	podManager  podmanager.PodManagerIface
+	claimStore  claimstore.PreparedClaimStore
 	helper      *kubeletplugin.Helper
 	client      coreclientset.Interface
 }
@@ -55,16 +55,16 @@ type Config struct {
 func New(ctx context.Context, devState devicestate.DeviceStateIface, kubeClient coreclientset.Interface, config *Config) (*Driver, error) {
 	logger := klog.FromContext(ctx).WithName("driver")
 
-	podManager, err := podmanager.New()
+	cs, err := claimstore.New()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create PodManager: %w", err)
+		return nil, fmt.Errorf("failed to create PreparedClaimStore: %w", err)
 	}
 
 	d := &Driver{
 		log:         logger,
 		nodeName:    config.NodeName,
 		deviceState: devState,
-		podManager:  podManager,
+		claimStore:  cs,
 		client:      kubeClient,
 	}
 

@@ -40,7 +40,7 @@ func (d *Driver) PrepareResourceClaims(ctx context.Context, claims []*resourceap
 		logger.V(1).Info("Preparing claim", "claim", claim.UID, "name", claim.Name, "namespace", claim.Namespace)
 		logger.V(3).Info("Claim", "claim", claim)
 
-		preparedDevices, err := d.podManager.Get(claim.UID)
+		preparedDevices, err := d.claimStore.Get(claim.UID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to access store: %w", err)
 		}
@@ -57,7 +57,7 @@ func (d *Driver) PrepareResourceClaims(ctx context.Context, claims []*resourceap
 			return result, err
 		}
 
-		if err := d.podManager.Set(claim.UID, preparedDevices); err != nil {
+		if err := d.claimStore.Set(claim.UID, preparedDevices); err != nil {
 			logger.Error(err, "Failed to persist prepared devices; rolling back preparation", "claim", claim.UID)
 			if rbErr := d.deviceState.UnprepareResourceClaim(ctx, preparedDevices); rbErr != nil {
 				logger.Error(rbErr, "Rollback after checkpoint failure also failed", "claim", claim.UID)
@@ -119,12 +119,12 @@ func (d *Driver) UnprepareResourceClaims(ctx context.Context, claims []kubeletpl
 	for _, claim := range claims {
 		logger.V(1).Info("Unprepareing claim", "claim", claim.UID, "name", claim.Name, "namespace", claim.Namespace)
 
-		pd, err := d.podManager.Get(claim.UID)
+		pd, err := d.claimStore.Get(claim.UID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to access store: %w", err)
 		}
 		if len(pd) == 0 {
-			logger.Info("Claim not found in pod manager, nothing to unprepare", "claim", claim.UID)
+			logger.Info("Claim not found in store, nothing to unprepare", "claim", claim.UID)
 			result[claim.UID] = nil
 			continue
 		}
@@ -135,7 +135,7 @@ func (d *Driver) UnprepareResourceClaims(ctx context.Context, claims []kubeletpl
 			continue
 		}
 
-		if err := d.podManager.Delete(claim.UID); err != nil {
+		if err := d.claimStore.Delete(claim.UID); err != nil {
 			return nil, fmt.Errorf("failed to remove element from store: %w", err)
 		}
 		result[claim.UID] = nil
