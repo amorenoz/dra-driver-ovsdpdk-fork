@@ -361,6 +361,27 @@ var _ = Describe("PrepareResourceClaims", func() {
 			Expect(found).To(BeFalse())
 		})
 	})
+
+	Context("when claimStore.Set fails", func() {
+		It("rolls back the prepared devices and returns the error", func() {
+			claim := makeClaim("uid-sf", "claim-sf", "default")
+			_, _ = client.ResourceV1().ResourceClaims("default").Create(ctx, claim, metav1.CreateOptions{})
+
+			prepared := makePreparedDevices("uid-sf", "claim-sf", "default")
+			pm.EXPECT().Get(claim.UID).Return(nil, nil).Once()
+			ds.EXPECT().PrepareResourceClaim(mock.Anything, mock.Anything).
+				Return(prepared, nil).Once()
+			pm.EXPECT().Set(claim.UID, prepared).Return(errors.New("disk full")).Once()
+			ds.EXPECT().UnprepareResourceClaim(mock.Anything, mock.Anything).
+				Return(nil).Once()
+
+			result, err := drv.PrepareResourceClaims(ctx, []*resourceapi.ResourceClaim{claim})
+			Expect(err).To(MatchError(ContainSubstring("disk full")))
+			Expect(result[claim.UID].Err).To(MatchError(ContainSubstring("disk full")))
+			// No Set succeeded — no UpdateStatus expected.
+			Expect(hasUpdateStatusAction(client, "default")).To(BeFalse())
+		})
+	})
 })
 
 var _ = Describe("UnprepareResourceClaims", func() {
