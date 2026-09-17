@@ -38,7 +38,7 @@ type Driver struct {
 	log         klog.Logger
 	nodeName    string
 	deviceState devicestate.DeviceStateIface
-	podManager  *podmanager.PodManager
+	podManager  podmanager.PodManagerIface
 	helper      *kubeletplugin.Helper
 	client      coreclientset.Interface
 }
