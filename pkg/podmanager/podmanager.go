@@ -48,10 +48,11 @@ func (pm *PodManager) Get(claimUID k8stypes.UID) ([]*dratypes.PreparedDevice, bo
 }
 
 // Set stores the PreparedDevice for the given claim UID.
-func (pm *PodManager) Set(claimUID k8stypes.UID, sc []*dratypes.PreparedDevice) {
+func (pm *PodManager) Set(claimUID k8stypes.UID, sc []*dratypes.PreparedDevice) error {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 	pm.byClaimUID[claimUID] = sc
+	return nil
 }
 
 // Delete removes the PreparedDevice for the given claim UID.
