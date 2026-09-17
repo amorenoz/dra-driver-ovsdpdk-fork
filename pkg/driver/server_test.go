@@ -36,8 +36,8 @@ import (
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 	"k8s.io/klog/v2"
 
+	csmocks "github.com/k8snetworkplumbingwg/dra-driver-ovsdpdk/pkg/claimstore/mocks"
 	dsmocks "github.com/k8snetworkplumbingwg/dra-driver-ovsdpdk/pkg/devicestate/mocks"
-	pmmocks "github.com/k8snetworkplumbingwg/dra-driver-ovsdpdk/pkg/podmanager/mocks"
 	dratypes "github.com/k8snetworkplumbingwg/dra-driver-ovsdpdk/pkg/types"
 )
 
@@ -49,11 +49,11 @@ func TestDriver(t *testing.T) {
 // newTestDriver builds a *Driver suitable for unit tests without starting the
 // kubelet plugin gRPC server. helper is intentionally left nil because
 // PrepareResourceClaims and UnprepareResourceClaims do not use it.
-func newTestDriver(ds *dsmocks.MockDeviceStateIface, pm *pmmocks.MockPodManagerIface, client *fake.Clientset) *Driver {
+func newTestDriver(ds *dsmocks.MockDeviceStateIface, cs *csmocks.MockPreparedClaimStore, client *fake.Clientset) *Driver {
 	return &Driver{
 		log:         klog.Background(),
 		deviceState: ds,
-		podManager:  pm,
+		claimStore:  cs,
 		client:      client,
 	}
 }
@@ -127,7 +127,7 @@ var _ = Describe("PrepareResourceClaims", func() {
 	var (
 		ctx    context.Context
 		ds     *dsmocks.MockDeviceStateIface
-		pm     *pmmocks.MockPodManagerIface
+		cs     *csmocks.MockPreparedClaimStore
 		client *fake.Clientset
 		drv    *Driver
 	)
@@ -135,18 +135,18 @@ var _ = Describe("PrepareResourceClaims", func() {
 	BeforeEach(func() {
 		ctx = context.Background()
 		ds = dsmocks.NewMockDeviceStateIface(GinkgoT())
-		pm = pmmocks.NewMockPodManagerIface(GinkgoT())
+		cs = csmocks.NewMockPreparedClaimStore(GinkgoT())
 		client = fake.NewClientset()
-		drv = newTestDriver(ds, pm, client)
+		drv = newTestDriver(ds, cs, client)
 	})
 
-	Context("when the claim is already cached in the pod manager", func() {
+	Context("when the claim is already cached in the claim store", func() {
 		It("returns the cached result without calling deviceState or UpdateStatus again", func() {
 			claim := makeClaim("uid-1", "claim-1", "default")
 			prepared := makePreparedDevices("uid-1", "claim-1", "default")
 
 			// Mock returns devices directly — no ds or UpdateStatus calls expected.
-			pm.EXPECT().Get(claim.UID).Return(prepared, nil).Once()
+			cs.EXPECT().Get(claim.UID).Return(prepared, nil).Once()
 
 			result, err := drv.PrepareResourceClaims(ctx, []*resourceapi.ResourceClaim{claim})
 			Expect(err).NotTo(HaveOccurred())
@@ -166,10 +166,10 @@ var _ = Describe("PrepareResourceClaims", func() {
 			claim = makeClaim("uid-2", "claim-2", "default")
 			prepared = makePreparedDevices("uid-2", "claim-2", "default")
 			_, _ = client.ResourceV1().ResourceClaims("default").Create(ctx, claim, metav1.CreateOptions{})
-			pm.EXPECT().Get(claim.UID).Return(nil, nil).Once()
+			cs.EXPECT().Get(claim.UID).Return(nil, nil).Once()
 			ds.EXPECT().PrepareResourceClaim(mock.Anything, mock.Anything).
 				Return(prepared, nil).Once()
-			pm.EXPECT().Set(claim.UID, prepared).Return(nil).Once()
+			cs.EXPECT().Set(claim.UID, prepared).Return(nil).Once()
 			var err error
 			result, err = drv.PrepareResourceClaims(ctx, []*resourceapi.ResourceClaim{claim})
 			Expect(err).NotTo(HaveOccurred())
@@ -192,10 +192,10 @@ var _ = Describe("PrepareResourceClaims", func() {
 			_, _ = client.ResourceV1().ResourceClaims("default").Create(ctx, claim, metav1.CreateOptions{})
 
 			prepared := makePreparedDevices("uid-conflict", "claim-conflict", "default")
-			pm.EXPECT().Get(claim.UID).Return(nil, nil).Once()
+			cs.EXPECT().Get(claim.UID).Return(nil, nil).Once()
 			ds.EXPECT().PrepareResourceClaim(mock.Anything, mock.Anything).
 				Return(prepared, nil).Once()
-			pm.EXPECT().Set(claim.UID, prepared).Return(nil).Once()
+			cs.EXPECT().Set(claim.UID, prepared).Return(nil).Once()
 
 			// Inject a conflict error on the first UpdateStatus call only.
 			conflictErr := apierrors.NewConflict(
@@ -245,7 +245,7 @@ var _ = Describe("PrepareResourceClaims", func() {
 			_, _ = client.ResourceV1().ResourceClaims("default").Create(ctx, claim, metav1.CreateOptions{})
 
 			prepared := makePreparedDevices("uid-multi-driver", "claim-multi-driver", "default")
-			pm.EXPECT().Get(claim.UID).Return(nil, nil).Once()
+			cs.EXPECT().Get(claim.UID).Return(nil, nil).Once()
 			// The mock must simulate what the real PrepareResourceClaim does:
 			// it populates claim.Status.Devices with our driver's entries.
 			ds.EXPECT().PrepareResourceClaim(mock.Anything, mock.Anything).
@@ -253,7 +253,7 @@ var _ = Describe("PrepareResourceClaims", func() {
 					c.Status.Devices = append(c.Status.Devices, ownDriverEntry)
 					return prepared, nil
 				}).Once()
-			pm.EXPECT().Set(claim.UID, prepared).Return(nil).Once()
+			cs.EXPECT().Set(claim.UID, prepared).Return(nil).Once()
 
 			conflictErr := apierrors.NewConflict(
 				schema.GroupResource{Group: "resource.k8s.io", Resource: "resourceclaims"},
@@ -324,7 +324,7 @@ var _ = Describe("PrepareResourceClaims", func() {
 		BeforeEach(func() {
 			claim = makeClaim("uid-3", "claim-3", "default")
 			prepareErr = errors.New("OVS port creation failed")
-			pm.EXPECT().Get(claim.UID).Return(nil, nil).Once()
+			cs.EXPECT().Get(claim.UID).Return(nil, nil).Once()
 			ds.EXPECT().PrepareResourceClaim(mock.Anything, mock.Anything).
 				Return(nil, prepareErr).Once()
 			result, returnedErr = drv.PrepareResourceClaims(ctx, []*resourceapi.ResourceClaim{claim})
@@ -349,7 +349,7 @@ var _ = Describe("PrepareResourceClaims", func() {
 			claim2 := makeClaim("uid-5", "claim-5", "default")
 			prepareErr := errors.New("first claim failed")
 
-			pm.EXPECT().Get(claim1.UID).Return(nil, nil).Once()
+			cs.EXPECT().Get(claim1.UID).Return(nil, nil).Once()
 			ds.EXPECT().PrepareResourceClaim(mock.Anything, mock.Anything).
 				Return(nil, prepareErr).Once()
 
@@ -368,10 +368,10 @@ var _ = Describe("PrepareResourceClaims", func() {
 			_, _ = client.ResourceV1().ResourceClaims("default").Create(ctx, claim, metav1.CreateOptions{})
 
 			prepared := makePreparedDevices("uid-sf", "claim-sf", "default")
-			pm.EXPECT().Get(claim.UID).Return(nil, nil).Once()
+			cs.EXPECT().Get(claim.UID).Return(nil, nil).Once()
 			ds.EXPECT().PrepareResourceClaim(mock.Anything, mock.Anything).
 				Return(prepared, nil).Once()
-			pm.EXPECT().Set(claim.UID, prepared).Return(errors.New("disk full")).Once()
+			cs.EXPECT().Set(claim.UID, prepared).Return(errors.New("disk full")).Once()
 			ds.EXPECT().UnprepareResourceClaim(mock.Anything, mock.Anything).
 				Return(nil).Once()
 
@@ -388,7 +388,7 @@ var _ = Describe("UnprepareResourceClaims", func() {
 	var (
 		ctx    context.Context
 		ds     *dsmocks.MockDeviceStateIface
-		pm     *pmmocks.MockPodManagerIface
+		cs     *csmocks.MockPreparedClaimStore
 		client *fake.Clientset
 		drv    *Driver
 	)
@@ -396,27 +396,27 @@ var _ = Describe("UnprepareResourceClaims", func() {
 	BeforeEach(func() {
 		ctx = context.Background()
 		ds = dsmocks.NewMockDeviceStateIface(GinkgoT())
-		pm = pmmocks.NewMockPodManagerIface(GinkgoT())
+		cs = csmocks.NewMockPreparedClaimStore(GinkgoT())
 		client = fake.NewClientset()
-		drv = newTestDriver(ds, pm, client)
+		drv = newTestDriver(ds, cs, client)
 	})
 
 	// prepareClaim runs a full PrepareResourceClaims so that the claim is
-	// cached in the pod manager, mirroring the real prepare→unprepare lifecycle.
+	// cached in the claim store, mirroring the real prepare→unprepare lifecycle.
 	prepareClaim := func(claim *resourceapi.ResourceClaim) {
 		prepared := makePreparedDevices(string(claim.UID), claim.Name, claim.Namespace)
 		_, _ = client.ResourceV1().ResourceClaims(claim.Namespace).Create(ctx, claim, metav1.CreateOptions{})
-		pm.EXPECT().Get(claim.UID).Return(nil, nil).Once()
+		cs.EXPECT().Get(claim.UID).Return(nil, nil).Once()
 		ds.EXPECT().PrepareResourceClaim(mock.Anything, mock.Anything).
 			Return(prepared, nil).Once()
-		pm.EXPECT().Set(claim.UID, prepared).Return(nil).Once()
+		cs.EXPECT().Set(claim.UID, prepared).Return(nil).Once()
 		_, err := drv.PrepareResourceClaims(ctx, []*resourceapi.ResourceClaim{claim})
 		Expect(err).NotTo(HaveOccurred())
 	}
 
 	Context("when the claim was never prepared", func() {
 		It("returns nil error without calling deviceState", func() {
-			pm.EXPECT().Get(k8stypes.UID("uid-missing")).Return(nil, nil).Once()
+			cs.EXPECT().Get(k8stypes.UID("uid-missing")).Return(nil, nil).Once()
 			result, err := drv.UnprepareResourceClaims(ctx, []kubeletplugin.NamespacedObject{
 				{UID: "uid-missing"},
 			})
@@ -426,15 +426,15 @@ var _ = Describe("UnprepareResourceClaims", func() {
 	})
 
 	Context("when unprepare succeeds", func() {
-		It("removes the claim from the pod manager", func() {
+		It("removes the claim from the claim store", func() {
 			claim := makeClaim("uid-6", "claim-6", "default")
 			prepared := makePreparedDevices("uid-6", "claim-6", "default")
 			prepareClaim(claim)
 
-			pm.EXPECT().Get(claim.UID).Return(prepared, nil).Once()
+			cs.EXPECT().Get(claim.UID).Return(prepared, nil).Once()
 			ds.EXPECT().UnprepareResourceClaim(mock.Anything, mock.Anything).
 				Return(nil).Once()
-			pm.EXPECT().Delete(claim.UID).Return(nil).Once()
+			cs.EXPECT().Delete(claim.UID).Return(nil).Once()
 
 			result, err := drv.UnprepareResourceClaims(ctx, []kubeletplugin.NamespacedObject{
 				{UID: claim.UID, NamespacedName: k8stypes.NamespacedName{Name: claim.Name, Namespace: claim.Namespace}},
@@ -456,7 +456,7 @@ var _ = Describe("UnprepareResourceClaims", func() {
 			prepared := makePreparedDevices("uid-7", "claim-7", "default")
 			prepareClaim(claim)
 			unprepareErr = errors.New("socket dir removal failed")
-			pm.EXPECT().Get(claim.UID).Return(prepared, nil).Once()
+			cs.EXPECT().Get(claim.UID).Return(prepared, nil).Once()
 			ds.EXPECT().UnprepareResourceClaim(mock.Anything, mock.Anything).
 				Return(unprepareErr).Once()
 			// No Delete expectation — mockery will fail if Delete is called.
@@ -482,17 +482,17 @@ var _ = Describe("UnprepareResourceClaims", func() {
 			prepareClaim(claim2)
 
 			unprepareErr := errors.New("fail claim-8")
-			pm.EXPECT().Get(claim1.UID).Return(prepared1, nil).Once()
+			cs.EXPECT().Get(claim1.UID).Return(prepared1, nil).Once()
 			ds.EXPECT().UnprepareResourceClaim(mock.Anything, mock.MatchedBy(func(pds []*dratypes.PreparedDevice) bool {
 				return len(pds) > 0 && pds[0].ClaimNamespacedName.UID == "uid-8"
 			})).Return(unprepareErr).Once()
 			// No Delete for claim1 — mockery fails if Delete(claim1.UID) is called.
 
-			pm.EXPECT().Get(claim2.UID).Return(prepared2, nil).Once()
+			cs.EXPECT().Get(claim2.UID).Return(prepared2, nil).Once()
 			ds.EXPECT().UnprepareResourceClaim(mock.Anything, mock.MatchedBy(func(pds []*dratypes.PreparedDevice) bool {
 				return len(pds) > 0 && pds[0].ClaimNamespacedName.UID == "uid-9"
 			})).Return(nil).Once()
-			pm.EXPECT().Delete(claim2.UID).Return(nil).Once()
+			cs.EXPECT().Delete(claim2.UID).Return(nil).Once()
 
 			result, err := drv.UnprepareResourceClaims(ctx, []kubeletplugin.NamespacedObject{
 				{UID: claim1.UID},
@@ -501,8 +501,8 @@ var _ = Describe("UnprepareResourceClaims", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result[claim1.UID]).To(MatchError(unprepareErr))
 			Expect(result[claim2.UID]).To(BeNil())
-			// pm.EXPECT().Delete(claim2.UID).Once() asserts claim-9 was removed.
-			// Absence of pm.EXPECT().Delete(claim1.UID) asserts claim-8 was kept.
+			// cs.EXPECT().Delete(claim2.UID).Once() asserts claim-9 was removed.
+			// Absence of cs.EXPECT().Delete(claim1.UID) asserts claim-8 was kept.
 		})
 	})
 })

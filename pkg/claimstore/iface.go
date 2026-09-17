@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package podmanager
+package claimstore
 
 import (
 	k8stypes "k8s.io/apimachinery/pkg/types"
@@ -22,9 +22,9 @@ import (
 	dratypes "github.com/k8snetworkplumbingwg/dra-driver-ovsdpdk/pkg/types"
 )
 
-// PodManagerIface is the interface consumed by the driver layer offering persistency
-// of prepared devices.
-type PodManagerIface interface {
+// PreparedClaimStore is the interface consumed by the driver layer for
+// persisting prepared device state between Prepare and Unprepare calls.
+type PreparedClaimStore interface {
 	Get(claimUID k8stypes.UID) ([]*dratypes.PreparedDevice, error)
 	Set(claimUID k8stypes.UID, sc []*dratypes.PreparedDevice) error
 	Delete(claimUID k8stypes.UID) error
