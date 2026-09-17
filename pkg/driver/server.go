@@ -57,7 +57,15 @@ func (d *Driver) PrepareResourceClaims(ctx context.Context, claims []*resourceap
 			return result, err
 		}
 
-		d.podManager.Set(claim.UID, preparedDevices)
+		if err := d.podManager.Set(claim.UID, preparedDevices); err != nil {
+			logger.Error(err, "Failed to persist prepared devices; rolling back preparation", "claim", claim.UID)
+			if rbErr := d.deviceState.UnprepareResourceClaim(ctx, preparedDevices); rbErr != nil {
+				logger.Error(rbErr, "Rollback after checkpoint failure also failed", "claim", claim.UID)
+				err = fmt.Errorf("%w; rollback: %w", err, rbErr)
+			}
+			result[claim.UID] = kubeletplugin.PrepareResult{Err: err}
+			return result, err
+		}
 		result[claim.UID] = preparedDevicesToResult(preparedDevices)
 		d.updateClaimStatus(ctx, claim)
 		logger.V(1).Info("Prepared claim", "claim", claim.UID, "name", claim.Name, "namespace", claim.Namespace, "result", preparedDevices)
