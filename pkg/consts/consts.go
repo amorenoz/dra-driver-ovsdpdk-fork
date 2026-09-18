@@ -51,6 +51,9 @@ const (
 
 	// DefaultContainerRootPath is the default vhost-user container base path.
 	DefaultContainerRootPath = "/var/run/ovsdpdk"
+
+	// DefaultMTU is the default MTU value used if the user did not specify a custom one.
+	DefaultMTU = 1500
 )
 
 // Backoff is the retry configuration used when updating ResourceClaim status.

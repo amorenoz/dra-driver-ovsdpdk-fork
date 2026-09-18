@@ -102,8 +102,8 @@ var _ = Describe("DeviceState", func() {
 				return nil
 			})
 			bridges := []ovsdpdkdrav1alpha1.BridgeSpec{
-				{Name: "br0"},
-				{Name: "br0"},
+				{Name: "br0", Mtu: consts.DefaultMTU},
+				{Name: "br0", Mtu: consts.DefaultMTU},
 			}
 			Expect(ds.UpdatePolicyDevices(ctx, bridges)).NotTo(Succeed())
 			Expect(called).To(BeFalse())
@@ -117,18 +117,18 @@ var _ = Describe("DeviceState", func() {
 
 		It("should succeed with unique bridge names", func(ctx SpecContext) {
 			bridges := []ovsdpdkdrav1alpha1.BridgeSpec{
-				{Name: "br0"},
-				{Name: "br1"},
-				{Name: "br2"},
+				{Name: "br0", Mtu: consts.DefaultMTU},
+				{Name: "br1", Mtu: consts.DefaultMTU},
+				{Name: "br2", Mtu: consts.DefaultMTU},
 			}
 			Expect(ds.UpdatePolicyDevices(ctx, bridges)).To(Succeed())
 		})
 
 		It("should return an error when two bridges share the same name", func(ctx SpecContext) {
 			bridges := []ovsdpdkdrav1alpha1.BridgeSpec{
-				{Name: "br0"},
-				{Name: "br1"},
-				{Name: "br0"},
+				{Name: "br0", Mtu: consts.DefaultMTU},
+				{Name: "br1", Mtu: consts.DefaultMTU},
+				{Name: "br0", Mtu: consts.DefaultMTU},
 			}
 			Expect(ds.UpdatePolicyDevices(ctx, bridges)).To(
 				MatchError(ContainSubstring("duplicate bridge name")),
@@ -137,8 +137,8 @@ var _ = Describe("DeviceState", func() {
 
 		It("should return an error when all bridges share the same name", func(ctx SpecContext) {
 			bridges := []ovsdpdkdrav1alpha1.BridgeSpec{
-				{Name: "br-phy0"},
-				{Name: "br-phy0"},
+				{Name: "br-phy0", Mtu: consts.DefaultMTU},
+				{Name: "br-phy0", Mtu: consts.DefaultMTU},
 			}
 			Expect(ds.UpdatePolicyDevices(ctx, bridges)).To(
 				MatchError(ContainSubstring(`"br-phy0"`)),
@@ -147,8 +147,8 @@ var _ = Describe("DeviceState", func() {
 
 		It("should produce one device per bridge with the correct name", func(ctx SpecContext) {
 			bridges := []ovsdpdkdrav1alpha1.BridgeSpec{
-				{Name: "br0"},
-				{Name: "br1"},
+				{Name: "br0", Mtu: consts.DefaultMTU},
+				{Name: "br1", Mtu: consts.DefaultMTU},
 			}
 			Expect(ds.UpdatePolicyDevices(ctx, bridges)).To(Succeed())
 			devices := ds.GetAllocatableDevices()
@@ -160,7 +160,7 @@ var _ = Describe("DeviceState", func() {
 		})
 
 		It("should set consumable capacity to DefaultBridgeCapacity and allow multiple allocations", func(ctx SpecContext) {
-			bridges := []ovsdpdkdrav1alpha1.BridgeSpec{{Name: "br0"}}
+			bridges := []ovsdpdkdrav1alpha1.BridgeSpec{{Name: "br0", Mtu: consts.DefaultMTU}}
 			Expect(ds.UpdatePolicyDevices(ctx, bridges)).To(Succeed())
 			device := ds.GetAllocatableDevices()["br0"]
 			Expect(device.AllowMultipleAllocations).To(Equal(ptr.To(true)))
@@ -171,12 +171,12 @@ var _ = Describe("DeviceState", func() {
 
 		It("should replace allocatable devices on successive calls", func(ctx SpecContext) {
 			Expect(ds.UpdatePolicyDevices(ctx, []ovsdpdkdrav1alpha1.BridgeSpec{
-				{Name: "br0"}, {Name: "br1"},
+				{Name: "br0", Mtu: consts.DefaultMTU}, {Name: "br1", Mtu: consts.DefaultMTU},
 			})).To(Succeed())
 			Expect(ds.GetAllocatableDevices()).To(HaveLen(2))
 
 			Expect(ds.UpdatePolicyDevices(ctx, []ovsdpdkdrav1alpha1.BridgeSpec{
-				{Name: "br2"},
+				{Name: "br2", Mtu: consts.DefaultMTU},
 			})).To(Succeed())
 			devices := ds.GetAllocatableDevices()
 			Expect(devices).To(HaveLen(1))
@@ -185,11 +185,11 @@ var _ = Describe("DeviceState", func() {
 
 		It("should leave allocatable devices unchanged when validation fails", func(ctx SpecContext) {
 			Expect(ds.UpdatePolicyDevices(ctx, []ovsdpdkdrav1alpha1.BridgeSpec{
-				{Name: "br0"},
+				{Name: "br0", Mtu: consts.DefaultMTU},
 			})).To(Succeed())
 
 			Expect(ds.UpdatePolicyDevices(ctx, []ovsdpdkdrav1alpha1.BridgeSpec{
-				{Name: "br1"}, {Name: "br1"},
+				{Name: "br1", Mtu: consts.DefaultMTU}, {Name: "br1", Mtu: consts.DefaultMTU},
 			})).NotTo(Succeed())
 			devices := ds.GetAllocatableDevices()
 			Expect(devices).To(HaveLen(1))
@@ -197,26 +197,26 @@ var _ = Describe("DeviceState", func() {
 		})
 
 		It("should succeed with a valid mtu on a bridge", func(ctx SpecContext) {
-			bridges := []ovsdpdkdrav1alpha1.BridgeSpec{{Name: "br0", Mtu: ptr.To(9000)}}
+			bridges := []ovsdpdkdrav1alpha1.BridgeSpec{{Name: "br0", Mtu: 9000}}
 			Expect(ds.UpdatePolicyDevices(ctx, bridges)).To(Succeed())
 		})
 
 		It("should return an error when mtu is below 68", func(ctx SpecContext) {
-			bridges := []ovsdpdkdrav1alpha1.BridgeSpec{{Name: "br0", Mtu: ptr.To(67)}}
+			bridges := []ovsdpdkdrav1alpha1.BridgeSpec{{Name: "br0", Mtu: 67}}
 			Expect(ds.UpdatePolicyDevices(ctx, bridges)).To(
 				MatchError(ContainSubstring("mtu 67 out of range")),
 			)
 		})
 
 		It("should return an error when mtu is above 65535", func(ctx SpecContext) {
-			bridges := []ovsdpdkdrav1alpha1.BridgeSpec{{Name: "br0", Mtu: ptr.To(65536)}}
+			bridges := []ovsdpdkdrav1alpha1.BridgeSpec{{Name: "br0", Mtu: 65536}}
 			Expect(ds.UpdatePolicyDevices(ctx, bridges)).To(
 				MatchError(ContainSubstring("mtu 65536 out of range")),
 			)
 		})
 
 		It("should expose mtu as a device attribute when set", func(ctx SpecContext) {
-			bridges := []ovsdpdkdrav1alpha1.BridgeSpec{{Name: "br0", Mtu: ptr.To(9000)}}
+			bridges := []ovsdpdkdrav1alpha1.BridgeSpec{{Name: "br0", Mtu: 9000}}
 			Expect(ds.UpdatePolicyDevices(ctx, bridges)).To(Succeed())
 			attr, ok := ds.GetAllocatableDevices()["br0"].Attributes["ovsdpdk.k8snetworkplumbingwg.io/mtu"]
 			Expect(ok).To(BeTrue())
@@ -224,11 +224,13 @@ var _ = Describe("DeviceState", func() {
 			Expect(*attr.IntValue).To(Equal(int64(9000)))
 		})
 
-		It("should not expose mtu as a device attribute when unset", func(ctx SpecContext) {
-			bridges := []ovsdpdkdrav1alpha1.BridgeSpec{{Name: "br0"}}
+		It("should expose default mtu as a device attribute", func(ctx SpecContext) {
+			bridges := []ovsdpdkdrav1alpha1.BridgeSpec{{Name: "br0", Mtu: consts.DefaultMTU}}
 			Expect(ds.UpdatePolicyDevices(ctx, bridges)).To(Succeed())
-			_, ok := ds.GetAllocatableDevices()["br0"].Attributes["ovsdpdk.k8snetworkplumbingwg.io/mtu"]
-			Expect(ok).To(BeFalse())
+			attr, ok := ds.GetAllocatableDevices()["br0"].Attributes["ovsdpdk.k8snetworkplumbingwg.io/mtu"]
+			Expect(ok).To(BeTrue())
+			Expect(attr.IntValue).NotTo(BeNil())
+			Expect(*attr.IntValue).To(Equal(int64(consts.DefaultMTU)))
 		})
 	})
 
@@ -578,13 +580,13 @@ var _ = Describe("DeviceState prepare/unprepare", func() {
 		It("should pass bridge MTU to CreatePort params", func(ctx SpecContext) {
 			ds, mockFS, mockOVS, _ := newDeviceStateWithMocks(ctx, nil)
 			Expect(ds.UpdatePolicyDevices(ctx, []ovsdpdkdrav1alpha1.BridgeSpec{
-				{Name: "br0", Mtu: ptr.To(9000)},
+				{Name: "br0", Mtu: 9000},
 			})).To(Succeed())
 
 			mockFS.EXPECT().CreateSocketDir(mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 			mockOVS.EXPECT().CreatePort(mock.Anything, "br0", mock.Anything, mock.Anything,
 				mock.MatchedBy(func(p *ovs.OvsPortParams) bool {
-					return p.Mtu != nil && *p.Mtu == 9000
+					return p.Mtu == 9000
 				}),
 			).Return(nil).Once()
 
@@ -755,7 +757,7 @@ var _ = Describe("DeviceState prepare/unprepare", func() {
 		It("should include mtu in Device.Metadata when the bridge has Mtu set", func(ctx SpecContext) {
 			ds, mockFS, mockOVS, _ := newDeviceStateWithMocks(ctx, nil)
 			Expect(ds.UpdatePolicyDevices(ctx, []ovsdpdkdrav1alpha1.BridgeSpec{
-				{Name: "br0", Mtu: ptr.To(9000)},
+				{Name: "br0", Mtu: 9000},
 			})).To(Succeed())
 			mockFS.EXPECT().CreateSocketDir(mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 			mockOVS.EXPECT().CreatePort(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
@@ -770,10 +772,10 @@ var _ = Describe("DeviceState prepare/unprepare", func() {
 			Expect(*mtuAttr.IntValue).To(Equal(int64(9000)))
 		})
 
-		It("should not include mtu in Device.Metadata when the bridge has no Mtu", func(ctx SpecContext) {
+		It("should include default mtu in Device.Metadata when the bridge uses default Mtu", func(ctx SpecContext) {
 			ds, mockFS, mockOVS, _ := newDeviceStateWithMocks(ctx, nil)
 			Expect(ds.UpdatePolicyDevices(ctx, []ovsdpdkdrav1alpha1.BridgeSpec{
-				{Name: "br0"},
+				{Name: "br0", Mtu: consts.DefaultMTU},
 			})).To(Succeed())
 			mockFS.EXPECT().CreateSocketDir(mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 			mockOVS.EXPECT().CreatePort(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
@@ -782,8 +784,10 @@ var _ = Describe("DeviceState prepare/unprepare", func() {
 			pd, err := ds.PrepareResourceClaim(ctx, claim)
 			Expect(err).NotTo(HaveOccurred())
 
-			_, ok := pd[0].Device.Metadata.Attributes["mtu"]
-			Expect(ok).To(BeFalse())
+			mtuAttr, ok := pd[0].Device.Metadata.Attributes["mtu"]
+			Expect(ok).To(BeTrue())
+			Expect(mtuAttr.IntValue).NotTo(BeNil())
+			Expect(*mtuAttr.IntValue).To(Equal(int64(consts.DefaultMTU)))
 		})
 	})
 })
