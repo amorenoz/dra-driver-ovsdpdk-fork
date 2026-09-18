@@ -65,14 +65,14 @@ spec:
   bridges:
     - name: br-dpdk0
     - name: br-dpdk1
-      mtu: 9000  # optional: custom MTU for jumbo frames
+      mtu: 9000  # default: 1500; set for jumbo frames
 ```
 
 | Field | Required | Description |
 |---|---|---|
 | `bridges[].name` | yes | OVS bridge name to advertise as a DRA device |
 | `bridges[].topologyResource` | no | Enable a topology Device Plugin for this bridge (see [Topology Device Plugin](#topology-device-plugin)) |
-| `bridges[].mtu` | no | Custom MTU for ports on this bridge (68–65535). Applied to OVS interface `mtu_request`. |
+| `bridges[].mtu` | no | MTU for ports on this bridge (68–65535, default: 1500). Applied to OVS interface `mtu_request`. |
 | `nodeSelector` | no | Limit to matching nodes; omit for all nodes |
 
 
@@ -304,7 +304,7 @@ The file is a JSON stream in the `metadata.resource.k8s.io/v1alpha1` format. It 
 | Attribute key | Value |
 |---|---|
 | `vhost-user-path` | Container-side path of the vhost-user socket |
-| `mtu` | Custom MTU value (optional, present if configured in the policy) |
+| `mtu` | MTU value (default: 1500, or the value configured in the policy) |
 | `ingress-policing-rate` | Ingress policing rate in kbps (optional, present when configured with a positive value; `0` means unlimited) |
 | `ingress-policing-burst` | Ingress policing burst in kb (optional, present when configured with a positive value; `0` or omission uses OVS default) |
 
