@@ -167,8 +167,8 @@ func (d *DeviceState) UpdatePolicyDevices(ctx context.Context, bridges []ovsdpdk
 			return fmt.Errorf("duplicate bridge name %q across OvsDpdkResourcePolicy objects", b.Name)
 		}
 		seen[b.Name] = struct{}{}
-		if b.Mtu != nil && (*b.Mtu < 68 || *b.Mtu > 65535) {
-			return fmt.Errorf("bridge %q: mtu %d out of range [68, 65535]", b.Name, *b.Mtu)
+		if b.Mtu < 68 || b.Mtu > 65535 {
+			return fmt.Errorf("bridge %q: mtu %d out of range [68, 65535]", b.Name, b.Mtu)
 		}
 	}
 
@@ -418,11 +418,9 @@ func bridgeToDevice(bridge ovsdpdkdrav1alpha1.BridgeSpec) AllocatableDevice {
 			StringValue: &bridgeName,
 		},
 	}
-	if bridge.Mtu != nil {
-		mtu := int64(*bridge.Mtu)
-		attrs[consts.DriverName+"/"+"mtu"] = resourceapi.DeviceAttribute{
-			IntValue: &mtu,
-		}
+	mtu := int64(bridge.Mtu)
+	attrs[consts.DriverName+"/"+"mtu"] = resourceapi.DeviceAttribute{
+		IntValue: &mtu,
 	}
 	return AllocatableDevice{
 		Device: resourceapi.Device{
@@ -460,10 +458,9 @@ func deviceMetadataAttrs(containerSocketPath string, params *ovs.OvsPortParams) 
 	attrs := map[string]resourceapi.DeviceAttribute{
 		"vhost-user-path": {StringValue: &socketPath},
 	}
-	if params.Mtu != nil {
-		mtu := int64(*params.Mtu)
-		attrs["mtu"] = resourceapi.DeviceAttribute{IntValue: &mtu}
-	}
+	mtu := int64(params.Mtu)
+	attrs["mtu"] = resourceapi.DeviceAttribute{IntValue: &mtu}
+
 	if params.IngressRate > 0 {
 		rate := int64(params.IngressRate)
 		attrs["ingress-policing-rate"] = resourceapi.DeviceAttribute{IntValue: &rate}
@@ -487,6 +484,7 @@ func ovsPortParams(claim *resourceapi.ResourceClaim, portConfig *ovsportv1alpha1
 		Vlan: portConfig.Vlan,
 		Mtu:  bridge.Mtu,
 	}
+
 	if portConfig.Policing != nil {
 		if portConfig.Policing.MaxRate != nil {
 			params.IngressRate = int(*portConfig.Policing.MaxRate)

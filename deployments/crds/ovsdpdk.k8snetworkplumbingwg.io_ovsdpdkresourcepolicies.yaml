@@ -49,9 +49,10 @@ spec:
                     as a DRA device.
                   properties:
                     mtu:
+                      default: 1500
                       description: |-
                         Mtu is the MTU requested for every port created on this bridge.
-                        Valid range: 68 (RFC 791 minimum) to 65535.
+                        Valid range: 68 (RFC 791 minimum) to 65535. Defaults to 1500.
                       maximum: 65535
                       minimum: 68
                       type: integer
@@ -71,6 +72,7 @@ spec:
                       pattern: ^[a-zA-Z0-9]([-a-zA-Z0-9_.]*[a-zA-Z0-9])?$
                       type: string
                   required:
+                  - mtu
                   - name
                   type: object
                 minItems: 1
