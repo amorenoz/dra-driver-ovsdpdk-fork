@@ -112,12 +112,16 @@ push-image: build-image
 # ---- cluster deployment ---------------------------------------------------
 
 HELM ?= go run helm.sh/helm/v4/cmd/helm@latest
+HUGEPAGES_1Gi   ?=
+HUGEPAGES_2Mi   ?=
 OPENSHIFT       ?=
 HELM_RELEASE    ?= dra-driver-ovsdpdk
 HELM_NAMESPACE  ?= dra-driver-ovsdpdk
 HELM_CHART      := $(CURDIR)/charts/dra-driver-ovsdpdk
 
 HELM_SET = --set image.repository=$(IMAGE_NAME) --set image.tag=$(IMAGE_TAG) \
+  $(if $(HUGEPAGES_1Gi),--set hugepages.hugepages-1Gi=$(HUGEPAGES_1Gi)) \
+  $(if $(HUGEPAGES_2Mi),--set hugepages.hugepages-2Mi=$(HUGEPAGES_2Mi)) \
   $(if $(OPENSHIFT),--set openshift.enabled=true)
 
 

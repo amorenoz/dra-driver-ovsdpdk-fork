@@ -3,5 +3,9 @@ image:
   tag: ""           # defaults to .Chart.AppVersion
   pullPolicy: IfNotPresent
 
+hugepages: {}
+  # hugepages-1Gi: "4Gi"
+  # hugepages-2Mi: "512Mi"
+
 openshift:
   enabled: false    # set to true to create SecurityContextConstraints

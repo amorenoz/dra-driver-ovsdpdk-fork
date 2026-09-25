@@ -53,7 +53,22 @@ spec:
                   fieldPath: metadata.namespace
           securityContext:
             privileged: true
+          {{- if not (empty .Values.hugepages) }}
+          resources:
+            limits:
+              {{- range $key, $val := .Values.hugepages }}
+              {{ $key }}: {{ $val }}
+              {{- end }}
+            requests:
+              {{- range $key, $val := .Values.hugepages }}
+              {{ $key }}: {{ $val }}
+              {{- end }}
+          {{- end }}
           volumeMounts:
+            {{- if not (empty .Values.hugepages) }}
+            - name: hugepages
+              mountPath: /dev/hugepages
+            {{- end }}
             - name: user-db
               mountPath: /etc/passwd
               subPath: passwd
@@ -75,6 +90,11 @@ spec:
             - name: ovs-run
               mountPath: /var/run/openvswitch
       volumes:
+        {{- if not (empty .Values.hugepages) }}
+        - name: hugepages
+          emptyDir:
+            medium: HugePages
+        {{- end }}
         - name: user-db
           emptyDir: {}
         - name: kubelet-plugins
