@@ -1,7 +1,10 @@
+{{- if .Values.openshift.enabled }}
 apiVersion: security.openshift.io/v1
 kind: SecurityContextConstraints
 metadata:
   name: ovsdpdk-driver
+  labels:
+    {{- include "chart.labels" . | nindent 4 }}
 allowPrivilegedContainer: true
 allowHostDirVolumePlugin: true
 allowHostNetwork: false
@@ -22,4 +25,5 @@ volumes:
   - emptyDir
   - secret
 users:
-  - system:serviceaccount:dra-driver-ovsdpdk:dra-driver-ovsdpdk
+  - system:serviceaccount:{{ .Release.Namespace }}:{{ include "chart.fullname" . }}
+{{- end }}

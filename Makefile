@@ -81,11 +81,11 @@ generate-deepcopy: $(CONTROLLER_GEN)
 	done
 
 generate-crds: $(CONTROLLER_GEN)
-	@mkdir -p $(CURDIR)/deployments/crds/
+	@mkdir -p $(CURDIR)/charts/dra-driver-ovsdpdk/crds/
 	$(CONTROLLER_GEN) \
 		crd \
 		paths=$(CURDIR)/pkg/api/ovsdpdkdra/v1alpha1/ \
-		output:crd:dir=$(CURDIR)/deployments/crds/
+		output:crd:dir=$(CURDIR)/charts/dra-driver-ovsdpdk/crds/
 
 $(CONTROLLER_GEN):
 	GOBIN=$(BIN_DIR) go install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_GEN_VERSION)
@@ -111,24 +111,24 @@ push-image: build-image
 
 # ---- cluster deployment ---------------------------------------------------
 
-deploy: ## Deploy the driver (vanilla Kubernetes / kind)
-	kubectl apply -f $(CURDIR)/deployments/crds/
-	kubectl kustomize $(CURDIR)/deployments/k8s/ | \
-		sed 's|IMAGE|$(IMAGE_NAME):$(IMAGE_TAG)|g' | \
-		kubectl apply -f -
+HELM ?= go run helm.sh/helm/v4/cmd/helm@latest
+OPENSHIFT       ?=
+HELM_RELEASE    ?= dra-driver-ovsdpdk
+HELM_NAMESPACE  ?= dra-driver-ovsdpdk
+HELM_CHART      := $(CURDIR)/charts/dra-driver-ovsdpdk
 
-undeploy: ## Remove the driver (vanilla Kubernetes / kind)
-	kubectl kustomize $(CURDIR)/deployments/k8s/ | \
-		kubectl delete --ignore-not-found -f -
-	kubectl delete --ignore-not-found -f $(CURDIR)/deployments/crds/
+HELM_SET = --set image.repository=$(IMAGE_NAME) --set image.tag=$(IMAGE_TAG) \
+  $(if $(OPENSHIFT),--set openshift.enabled=true)
 
-deploy-openshift: ## Deploy the driver on OpenShift
-	kubectl apply -f $(CURDIR)/deployments/crds/
-	kubectl kustomize $(CURDIR)/deployments/openshift/ | \
-		sed 's|IMAGE|$(IMAGE_NAME):$(IMAGE_TAG)|g' | \
-		kubectl apply -f -
 
-undeploy-openshift: ## Remove the driver from OpenShift
-	kubectl kustomize $(CURDIR)/deployments/openshift/ | \
-		kubectl delete --ignore-not-found -f -
-	kubectl delete --ignore-not-found -f $(CURDIR)/deployments/crds/
+deploy: ## Deploy the driver
+	$(HELM) upgrade --install $(HELM_RELEASE) $(HELM_CHART) \
+		-n $(HELM_NAMESPACE) --create-namespace $(HELM_SET)
+
+undeploy: ## Remove the driver
+	$(HELM) uninstall $(HELM_RELEASE) -n $(HELM_NAMESPACE)
+
+deploy-openshift: OPENSHIFT = 1
+deploy-openshift: deploy ## Deploy the driver on OpenShift
+
+undeploy-openshift: undeploy ## Remove the driver from OpenShift

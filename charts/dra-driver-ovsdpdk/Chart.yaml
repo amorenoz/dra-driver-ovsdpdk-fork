@@ -1,0 +1,7 @@
+apiVersion: v2
+name: dra-driver-ovsdpdk
+description: DRA driver for OVS-DPDK network devices
+type: application
+version: 0.1.0
+appVersion: "latest"
+kubeVersion: ">=1.36.0"

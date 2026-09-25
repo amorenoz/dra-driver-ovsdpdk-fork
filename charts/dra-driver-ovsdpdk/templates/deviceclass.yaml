@@ -1,9 +1,9 @@
-# DeviceClass that matches any device advertised by the OVS-DPDK driver.
-# Pods reference this class in their ResourceClaim specs.
 apiVersion: resource.k8s.io/v1
 kind: DeviceClass
 metadata:
   name: ovsdpdk
+  labels:
+    {{- include "chart.labels" . | nindent 4 }}
 spec:
   selectors:
     - cel:

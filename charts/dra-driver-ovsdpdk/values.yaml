@@ -1,0 +1,7 @@
+image:
+  repository: ghcr.io/k8snetworkplumbingwg/dra-driver-ovsdpdk
+  tag: ""           # defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+
+openshift:
+  enabled: false    # set to true to create SecurityContextConstraints
