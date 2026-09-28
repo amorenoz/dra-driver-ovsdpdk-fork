@@ -6,7 +6,7 @@ require (
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/onsi/ginkgo/v2 v2.33.0
-	github.com/onsi/gomega v1.43.1
+	github.com/onsi/gomega v1.44.0
 	github.com/ovn-kubernetes/libovsdb v0.8.2-0.20260519120753-0f13f501c7ba
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.12.1
